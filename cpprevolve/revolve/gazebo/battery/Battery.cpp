@@ -13,9 +13,7 @@ Battery::Battery(double initial_charge)
 void Battery::Update(double global_time, double delta_time)
 {
     double sum = 0.0;
-    //    std::cout << "battery: " << this->Voltage() << "V" << std::endl;
     for (const auto &consumer: this->PowerLoads()) {
-//            std::cout << "comsumer: " << consumer.first << " -> " << consumer.second << std::endl;
         sum += consumer.second; // TODO add constant so its linear
     }
     this->current_charge += sum * delta_time; // charge is measured in joules

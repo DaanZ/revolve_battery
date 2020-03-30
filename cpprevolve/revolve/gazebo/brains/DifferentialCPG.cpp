@@ -434,9 +434,6 @@ void DifferentialCPG::bo_init_sampling(){
       Eigen::VectorXd init_sample(this->n_weights);
 
       // For all weights
-        srand((unsigned)time(NULL));
-        // trash first one, because it could be the same and I do not know why
-        auto trash_first = rand();
       for (size_t j = 0; j < this->n_weights; j++)
       {
         // Generate a random number in [0, 1]. Transform later
@@ -484,9 +481,6 @@ void DifferentialCPG::bo_init_sampling(){
       Eigen::VectorXd init_sample(this->n_weights);
 
       // For all dimensions
-        srand((unsigned)time(NULL));
-        // trash first one, because it could be the same and I do not know why
-        auto trash_first = rand();
       for (size_t j = 0; j < this->n_weights; j++)
       {
         // Take a LHS
