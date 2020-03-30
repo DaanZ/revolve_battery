@@ -12,5 +12,5 @@ print(len(paths))
 
 for path in paths:
     # Call the experiment
-    py_command = python_interpreter + " experiments/battery/RunAnalysisBO.py " + path + "/ 50 1"
+    py_command = python_interpreter + " experiments/bo_learner/RunAnalysisBO.py " + path + "/ 50 1"
     os.system(py_command)

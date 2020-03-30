@@ -22,9 +22,9 @@ min_lines = 1490
 run_gazebo = False
 n_runs = 20 # Naar 20
 n_jobs = 1
-my_yaml_path = "experiments/battery/yaml/"
+my_yaml_path = "experiments/bo_learner/yaml/"
 yaml_model = "gecko7.yaml" # CHANGETHIS !
-manager = "experiments/battery/manager.py"
+manager = "experiments/bo_learner/manager.py"
 python_interpreter = "~/projects/revolve/.venv/bin/python3"
 
 
