@@ -1,16 +1,27 @@
 import random as py_random
 from pyrevolve.tol.manage import measures
 
-def stupid(robot_manager):
+from pyrevolve.angle import RobotManager as RvRobotManager
+from pyrevolve.tol.manage.robotmanager import RobotManager
+
+
+def stupid(robot_manager: RvRobotManager):
     return 1.0
 
-def random(robot_manager):
+
+def random(robot_manager: RvRobotManager):
     return py_random.random()
 
-def displacement_velocity(robot_manager):
+
+def displacement_velocity(robot_manager: RvRobotManager):
     return measures.displacement_velocity(robot_manager)
 
-def online_old_revolve(robot_manager):
+
+def battery(robot_manager: RvRobotManager):
+    return robot_manager.battery_level
+
+
+def online_old_revolve(robot_manager: RobotManager):
     """
     Fitness is proportional to both the displacement and absolute
     velocity of the center of mass of the robot, in the formula:
@@ -27,21 +38,22 @@ def online_old_revolve(robot_manager):
     :return:
     """
     age = robot_manager.age()
-    if age < (0.25 * robot_manager.conf.evaluation_time) \
-       or age < robot_manager.conf.warmup_time:
+    if age < (0.25 * robot_manager.config.evaluation_time) \
+       or age < robot_manager.config.warmup_time:
         # We want at least some data
         return 0.0
 
-    v_fac = robot_manager.conf.fitness_velocity_factor
-    d_fac = robot_manager.conf.fitness_displacement_factor
-    s_fac = robot_manager.conf.fitness_size_factor
-    d = 1.0 - (robot_manager.conf.fitness_size_discount * robot_manager.size)
+    v_fac = robot_manager.config.fitness_velocity_factor
+    d_fac = robot_manager.config.fitness_displacement_factor
+    s_fac = robot_manager.config.fitness_size_factor
+    d = 1.0 - (robot_manager.config.fitness_size_discount * robot_manager.size)
     v = d * (d_fac * measures.displacement_velocity(robot_manager)
              + v_fac * measures.velocity(robot_manager)
              + s_fac * robot_manager.size)
-    return v if v <= robot_manager.conf.fitness_limit else 0.0
+    return v if v <= robot_manager.config.fitness_limit else 0.0
 
-def displacement_velocity_hill(robot_manager):
+
+def displacement_velocity_hill(robot_manager: RvRobotManager):
     _displacement_velocity_hill = measures.displacement_velocity_hill(robot_manager)
     if _displacement_velocity_hill < 0:
         _displacement_velocity_hill /= 10
@@ -53,13 +65,14 @@ def displacement_velocity_hill(robot_manager):
 
     return _displacement_velocity_hill
 
-def floor_is_lava(robot_manager):
+
+def floor_is_lava(robot_manager: RvRobotManager):
 
     _displacement_velocity_hill = measures.displacement_velocity_hill(robot_manager)
     _sum_of_contacts = measures.sum_of_contacts(robot_manager)
     if _displacement_velocity_hill >= 0:
-        fitness = _displacement_velocity_hill *_(1/_sum_of_contacts)
+        fitness = _displacement_velocity_hill * (1/_sum_of_contacts)
     else:
-        fitness = _displacement_velocity_hill /_(1/_sum_of_contacts)
+        fitness = _displacement_velocity_hill / (1/_sum_of_contacts)
 
     return fitness

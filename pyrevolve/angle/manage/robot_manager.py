@@ -6,8 +6,6 @@ from collections import deque
 
 from pyrevolve.SDF.math import Vector3, Quaternion
 from pyrevolve.util import Time
-import math
-import os
 
 
 class RobotManager(object):
@@ -18,133 +16,149 @@ class RobotManager(object):
     def __init__(
             self,
             robot,
-            position,
-            time,
-            battery_level=0.0,
-            speed_window=60,
-            warmup_time=0,
+            position: Vector3,
+            time: Time,
+            battery_level: float = 0.0,
+            speed_window: int = 60,
+            warmup_time: float = 0.0,
     ):
         """
-        :param speed_window:
-        :param robot: RevolveBot
+        :param robot: RevolveBot?
         :param position:
-        :type position: Vector3
         :param time:
-        :type time: Time
         :param battery_level:
-        :type battery_level: float
+        :param speed_window:
+        :param warmup_time:
         :return:
         """
-        self.warmup_time = warmup_time
-        self.speed_window = speed_window
+        # parameters
         self.robot = robot
         self.starting_position = position
+
         self.starting_time = time
+        # Unused
         self.battery_level = battery_level
+
+        self.speed_window = speed_window
+        self.warmup_time = warmup_time
 
         self.last_position = position
         self.last_update = time
-        self.last_mate = None
 
-        self._ds = deque(maxlen=speed_window)
-        self._dt = deque(maxlen=speed_window)
+        self._delta_distance = deque(maxlen=speed_window)
+        self._delta_time = deque(maxlen=speed_window)
+
+        self._distance = 0
+        self._time = 0
+
+        # only used for storage not accessed.
         self._positions = deque(maxlen=speed_window)
         self._orientations = deque(maxlen=speed_window)
         self._contacts = deque(maxlen=speed_window)
         self._seconds = deque(maxlen=speed_window)
         self._times = deque(maxlen=speed_window)
 
-        self._dist = 0
-        self._time = 0
-        self._idx = 0
-        self._count = 0
-        self.second = 1
-        self.count_group = 1
-        self.avg_roll = 0
-        self.avg_pitch = 0
-        self.avg_yaw = 0
-        self.avg_x = 0
-        self.avg_y = 0
-        self.avg_z = 0
-
     @property
     def name(self):
         return str(self.robot.id)
 
-    def update_state(self, world, time, state, poses_file):
+    def update_state(self, world, time: Time, state, poses_file):
         """
         Updates the robot state from a state message.
 
         :param world: Instance of the world
         :param time: The simulation time at the time of this
                      position update.
-        :type time: Time
         :param state: State message
         :param poses_file: CSV writer to write pose to, if applicable
         :type poses_file: csv.writer
         :return:
         """
+        position = self._set_pose(state)
+
+        self.battery_level = state.battery_charge
+
+        age = world.age()
+
+        # log pose and battery
+        if poses_file:
+            poses_file.writerow([self.robot.id, age.sec, age.nsec,
+                                 position.x, position.y, position.z,
+                                 self.get_battery_level()])
+
+        is_warmup_time = self._update_time(position, time)
+        # Don't have to process states during warm up.
+        if is_warmup_time:
+            return
+
+        self._set_deltas(position, time)
+
+        self._seconds.append(age.sec)
+        self._times.append(time)
+
+    def _set_pose(self, state):
+
         pos = state.pose.position
         position = Vector3(pos.x, pos.y, pos.z)
 
         rot = state.pose.orientation
         qua = Quaternion(rot.w, rot.x, rot.y, rot.z)
         euler = qua.get_rpy()
-        euler = np.array([euler[0], euler[1], euler[2]]) # roll / pitch / yaw
+        euler = np.array([euler[0], euler[1], euler[2]])  # roll / pitch / yaw
 
-        age = world.age()
+        self._positions.append(position)
+        self._orientations.append(euler)
 
+        return position
+
+    def _update_time(self, position, time):
+
+        # Start keeping track of variables one the first run
         if self.starting_time is None:
             self.starting_time = time
             self.last_update = time
             self.last_position = position
 
-        if poses_file:
-            age = world.age()
-            poses_file.writerow([self.robot.id, age.sec, age.nsec,
-                                 position.x, position.y, position.z,
-                                 self.get_battery_level()])
+        is_warmup_time = float(self.age()) < self.warmup_time
 
-        if float(self.age()) < self.warmup_time:
-            # Don't update position values within the warmup time
+        # Don't update position values within the warmup time
+        if is_warmup_time:
             self.last_position = position
             self.last_update = time
-            return
 
+        return is_warmup_time
+
+    def _set_deltas(self, position, time):
         # Calculate the distance the robot has covered as the Euclidean
         # distance over the x and y coordinates (we don't care for flying),
         # as well as the time it took to cover this distance.
-        last = self.last_position
-        ds = np.sqrt((position.x - last.x)**2 + (position.y - last.y)**2)
-        dt = float(time - self.last_update)
+        delta_distance = np.sqrt((position.x - self.last_position.x) ** 2 + (position.y - self.last_position.y) ** 2)
+        delta_time = float(time - self.last_update)
 
         # Velocity is of course sum(distance) / sum(time)
         # Storing all separate distance and time values allows us to
         # efficiently calculate the new speed over the window without
         # having to sum the entire arrays each time, by subtracting
-        # the values we're about to remove from the _dist / _time values.
-        self._dist += ds
-        self._time += dt
+        # the values we're about to remove from the _distance / _time values.
+        self._distance += delta_distance
+        self._time += delta_time
 
-        if len(self._dt) >= self.speed_window:
+        if len(self._delta_time) >= self.speed_window:
             # Subtract oldest values if we're about to override it
-            self._dist -= self._ds[-1]
-            self._time -= self._dt[-1]
+            self._distance -= self._delta_distance[-1]
+            self._time -= self._delta_time[-1]
 
         self.last_position = position
         self.last_update = time
 
-        self._positions.append(position)
-        self._times.append(time)
-        self._ds.append(ds)
-        self._dt.append(dt)
-        self._orientations.append(euler)
-        self._seconds.append(age.sec)
+        self._delta_distance.append(delta_distance)
+        self._delta_time.append(delta_time)
 
+    # TODO Unused
     def update_contacts(self, world, module_contacts):
 
         number_contacts = 0
-        for position in module_contacts.position:
+        for _ in module_contacts.position:
             number_contacts += 1
 
         self._contacts.append(number_contacts)

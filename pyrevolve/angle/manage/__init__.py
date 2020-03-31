@@ -1,4 +1,4 @@
 from __future__ import absolute_import
 
-from .robotmanager import RobotManager
-from .world import WorldManager
+from .robot_manager import RobotManager
+from .world_manager import WorldManager

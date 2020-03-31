@@ -8,6 +8,8 @@ import shutil
 import sys
 import traceback
 
+from typing import List
+
 from asyncio import Future
 from datetime import datetime
 from pygazebo.msg import gz_string_pb2
@@ -17,7 +19,7 @@ from pyrevolve.SDF.math import Vector3
 from pyrevolve.spec.msgs import BoundingBox
 from pyrevolve.spec.msgs import ModelInserted
 from pyrevolve.spec.msgs import RobotStates
-from .robotmanager import RobotManager
+from .robot_manager import RobotManager
 from ...gazebo import manage
 from ...gazebo import RequestHandler
 from ...util import multi_future
@@ -43,15 +45,14 @@ class WorldManager(manage.WorldManager):
     ):
         """
 
+        :param builder:
+        :param generator:
+        :param world_address:
+        :param output_directory:
+        :param state_update_frequency:
         :param restore: Restore the world from this directory, if available.
                         Only works if `output_directory` is also specified.
-        :param state_update_frequency:
-        :param generator:
         :param _private:
-        :param world_address:
-        :param analyzer_address:
-        :param builder:
-        :param output_directory:
         :return:
         """
         super(WorldManager, self).__init__(
@@ -87,7 +88,7 @@ class WorldManager(manage.WorldManager):
 
         self.do_restore = None
 
-        # Sorry Matteo
+        # TODO ... Sorry Matteo
         if False: #output_directory:
             if not restore:
                 restore = datetime.now() \
@@ -332,7 +333,7 @@ class WorldManager(manage.WorldManager):
         self.robot_id += 1
         return self.robot_id
 
-    def robot_list(self):
+    def robot_list(self) -> List[RobotManager]:
         """
         Returns the list of registered robots
         :return:
@@ -340,7 +341,7 @@ class WorldManager(manage.WorldManager):
         """
         return list(self.robot_managers.values())
 
-    def get_robot_by_name(self, name):
+    def get_robot_by_name(self, name) -> RobotManager:
         """
         :param name:
         :return:
@@ -425,15 +426,13 @@ class WorldManager(manage.WorldManager):
         sdf_bot = revolve_bot.to_sdf(pose)
 
         if self.output_directory:
-            robot_file_path = os.path.join(
-                self.output_directory,
-                'robot_{}.sdf'.format(revolve_bot.id)
-            )
+            robot_file_path = os.path.join(self.output_directory, 'robot_{}.sdf'.format(revolve_bot.id) )
             with open(robot_file_path, 'w') as f:
                 f.write(sdf_bot)
 
         future = Future()
         insert_future = await self.insert_model(sdf_bot)
+
         def _callback(_future):
             try:
                 self._robot_inserted(
@@ -443,6 +442,7 @@ class WorldManager(manage.WorldManager):
                         )
             except Exception as e:
                 _future.set_exception(e)
+
         insert_future.add_done_callback(_callback)
         return future
 
@@ -464,16 +464,16 @@ class WorldManager(manage.WorldManager):
         raise NotImplementedError(
             "Implement in subclass if you want to use this method.")
 
-    async def delete_robot(self, robot):
+    async def delete_robot(self, robot_manager: RobotManager):
         """
-        :param robot:
-        :type robot: RobotManager
+        :param robot_manager:
+        :type robot_manager: RobotManager
         :return:
         """
         # Immediately unregister the robot so no it won't be used
         # for anything else while it is being deleted.
-        self.unregister_robot(robot)
-        future = await (self.delete_model(robot.name, req="delete_robot"))
+        self.unregister_robot(robot_manager)
+        future = await (self.delete_model(robot_manager.name, req="delete_robot"))
         return future
 
     async def delete_all_robots(self):
@@ -540,7 +540,7 @@ class WorldManager(manage.WorldManager):
             time=time,
         )
 
-    def register_robot(self, robot_manager):
+    def register_robot(self, robot_manager: RobotManager):
         """
         Registers a robot with its Gazebo ID in the local array.
         :param robot_manager:
@@ -554,7 +554,7 @@ class WorldManager(manage.WorldManager):
 
         self.robot_managers[robot_manager.name] = robot_manager
 
-    def unregister_robot(self, robot_manager):
+    def unregister_robot(self, robot_manager: RobotManager):
         """
         Unregisters the robot with the given ID, usually happens when
         it is deleted.
@@ -589,6 +589,7 @@ class WorldManager(manage.WorldManager):
         ))
         return future
 
+    # TODO unused
     async def update_battery_levels(self):
         """
         Communicates battery levels for all active robots.
@@ -622,17 +623,17 @@ class WorldManager(manage.WorldManager):
         """
         states = RobotStates()
         states.ParseFromString(msg)
-        self.last_time = t = Time(msg=states.time)
-        if self.start_time is None or t < self.start_time:
-            # A lower start time may indicate a world reset, which
-            # we should copy.
-            self.start_time = t
+
+        self.last_time = Time(msg=states.time)
+        if self.start_time is None or self.last_time < self.start_time:
+            # A lower start time may indicate a world reset, which we should copy.
+            self.start_time = self.last_time
 
         for state in states.robot_state:
-            robot_manager = self.robot_managers.get(state.name, None)
+            robot_manager: RobotManager = self.robot_managers.get(state.name, None)
             if not robot_manager:
                 continue
-            robot_manager.update_state(self, t, state, self.write_poses)
+            robot_manager.update_state(self, self.last_time, state, self.write_poses)
 
         self.call_update_triggers()
 

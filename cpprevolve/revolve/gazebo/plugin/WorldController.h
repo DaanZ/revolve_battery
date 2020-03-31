@@ -36,7 +36,6 @@
 #include <gazebo/msgs/msgs.hh>
 
 #include <revolve/msgs/model_inserted.pb.h>
-#include <revolve/msgs/robot_states.pb.h>
 
 namespace revolve
 {
@@ -101,18 +100,10 @@ namespace revolve
       // Subscriber for actual model insertion
       ::gazebo::transport::SubscriberPtr modelSub_;
 
-      // Publisher for periodic robot poses
-      ::gazebo::transport::PublisherPtr robotStatesPub_;
-
-      // Frequency at which robot info is published
-      // Defaults to 0, which means no update at all
-      unsigned int robotStatesPubFreq_;
-
       // Pointer to the update event connection
       ::gazebo::event::ConnectionPtr updateConnection_;
 
-      // Last (simulation) time robot info was sent
-      double lastRobotStatesUpdateTime_;
+
     };
   }  // namespace gazebo
 }  // namespace revolve

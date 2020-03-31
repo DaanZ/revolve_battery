@@ -28,8 +28,7 @@ using namespace revolve::gazebo;
 /////////////////////////////////////////////////
 WorldController::WorldController()
     : delete_robot_queue()
-    , robotStatesPubFreq_(5)
-    , lastRobotStatesUpdateTime_(0)
+
 {
 }
 
@@ -52,7 +51,6 @@ WorldController::~WorldController()
     unsubscribe(this->modelSub_);
     fini(this->requestPub_);
     fini(this->responsePub_);
-    fini(this->robotStatesPub_);
 }
 
 /////////////////////////////////////////////////
@@ -100,14 +98,11 @@ void WorldController::Load(
   this->updateConnection_ = gz::event::Events::ConnectWorldUpdateBegin(
       boost::bind(&WorldController::OnUpdate, this, _1));
 
-  // Robot pose publisher
-  this->robotStatesPub_ = this->node_->Advertise< revolve::msgs::RobotStates >(
-      "~/revolve/robot_states", 50);
 }
 
 void WorldController::Reset()
 {
-    this->lastRobotStatesUpdateTime_ = 0; //this->world_->SimTime().Double();
+    //this->world_->SimTime().Double();
 }
 
 /////////////////////////////////////////////////
@@ -135,46 +130,6 @@ void WorldController::OnUpdate(const ::gazebo::common::UpdateInfo &_info)
         }
     }
 
-
-  if (not this->robotStatesPubFreq_)
-  {
-    return;
-  }
-
-  auto secs = 1.0 / this->robotStatesPubFreq_;
-  auto time = _info.simTime.Double();
-  if ((time - this->lastRobotStatesUpdateTime_) >= secs)
-  {
-    // Send robot info update message, this only sends the
-    // main pose of the robot (which is all we need for now)
-    msgs::RobotStates msg;
-    gz::msgs::Set(msg.mutable_time(), _info.simTime);
-
-    for (const auto &model : this->world_->Models())
-    {
-      if (model->IsStatic())
-      {
-        // Ignore static models such as the ground and obstacles
-        continue;
-      }
-
-      auto stateMsg = msg.add_robot_state();
-      stateMsg->set_name(model->GetScopedName());
-      stateMsg->set_id(model->GetId());
-
-      auto poseMsg = stateMsg->mutable_pose();
-      auto relativePose = model->RelativePose();
-
-      gz::msgs::Set(poseMsg, relativePose);
-
-    }
-
-    if (msg.robot_state_size() > 0)
-    {
-      this->robotStatesPub_->Publish(msg);
-      this->lastRobotStatesUpdateTime_ = time;
-    }
-  }
 }
 
 /////////////////////////////////////////////////
@@ -235,21 +190,6 @@ void WorldController::HandleRequest(ConstRequestPtr &request)
     // Don't leak memory
     // https://bitbucket.org/osrf/sdformat/issues/104/memory-leak-in-element
     robotSDF.Root()->Reset();
-  }
-  else if (request->request() == "set_robot_state_update_frequency")
-  {
-    auto frequency = request->data();
-    assert(frequency.find_first_not_of( "0123456789" ) == std::string::npos);
-    this->robotStatesPubFreq_ = (unsigned int)std::stoul(frequency);
-    std::cout << "Setting robot state update frequency to "
-              << this->robotStatesPubFreq_ << "." << std::endl;
-
-    gz::msgs::Response resp;
-    resp.set_id(request->id());
-    resp.set_request("set_robot_state_update_frequency");
-    resp.set_response("success");
-
-    this->responsePub_->Publish(resp);
   }
 }
 

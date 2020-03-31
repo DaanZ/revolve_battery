@@ -37,7 +37,23 @@ using namespace revolve::gazebo;
 /// config in Load.
 RobotController::RobotController()
     : actuationTime_(0)
+    , robotStatesPubFreq_(5)
+    , lastRobotStatesUpdateTime_(0)
 {
+}
+
+// TODO duplicate code
+void unsubscribe(gz::transport::SubscriberPtr &subscription)
+{
+    if (subscription)
+        subscription->Unsubscribe();
+}
+
+// TODO duplicate code
+void fini(gz::transport::PublisherPtr &publisher)
+{
+    if (publisher)
+        publisher->Fini();
 }
 
 /////////////////////////////////////////////////
@@ -47,6 +63,9 @@ RobotController::~RobotController()
   this->world_.reset();
   this->motorFactory_.reset();
   this->sensorFactory_.reset();
+  unsubscribe(this->requestSub_);
+  fini(this->robotStatesPub_);
+  fini(this->responsePub_);
 }
 
 /////////////////////////////////////////////////
@@ -63,6 +82,15 @@ void RobotController::Load(
   this->node_.reset(new gz::transport::Node());
   this->node_->Init();
 
+  // Subscribe to insert request messages
+  this->requestSub_ = this->node_->Subscribe(
+      "~/request",
+      &RobotController::HandleRequest,
+      this);
+
+  // Publisher for inserted models
+  this->responsePub_ = this->node_->Advertise< gz::msgs::Response >(
+      "~/response");
 
   if (not _sdf->HasElement("rv:robot_config"))
   {
@@ -97,8 +125,32 @@ void RobotController::Load(
 
   // Call startup function which decides on actuation
   this->Startup(_parent, _sdf);
+
+    // Robot pose publisher
+  this->robotStatesPub_ = this->node_->Advertise< revolve::msgs::RobotStates >(
+      "~/revolve/robot_states", 50);
 }
 
+/////////////////////////////////////////////////
+// Process insert and delete requests
+void RobotController::HandleRequest(ConstRequestPtr &request)
+{
+  if (request->request() == "set_robot_state_update_frequency")
+  {
+    auto frequency = request->data();
+    assert(frequency.find_first_not_of( "0123456789" ) == std::string::npos);
+    this->robotStatesPubFreq_ = (unsigned int)std::stoul(frequency);
+    std::cout << "Setting robot state update frequency to "
+              << this->robotStatesPubFreq_ << "." << std::endl;
+
+    gz::msgs::Response resp;
+    resp.set_id(request->id());
+    resp.set_request("set_robot_state_update_frequency");
+    resp.set_response("success");
+
+    this->responsePub_->Publish(resp);
+  }
+}
 /////////////////////////////////////////////////
 void RobotController::LoadActuators(const sdf::ElementPtr _sdf)
 {
@@ -221,16 +273,52 @@ void RobotController::DoUpdate(const ::gazebo::common::UpdateInfo _info)
 //        std::exit(0);
 //    }
 
-
   auto currentTime = _info.simTime.Double() - initTime_;
 
-  /// exits out of simulation after 30 mins of simulation time
-//  if (initTime_ > 30)
-//  {
-//      std::exit(0);
-//  }
   this->brain_->Update(motors_, sensors_, currentTime, actuationTime_);
   this->battery_->Update(currentTime, actuationTime_);
+
+  if (not this->robotStatesPubFreq_)
+  {
+    return;
+  }
+
+  auto secs = 1.0 / this->robotStatesPubFreq_;
+  auto time = _info.simTime.Double();
+  if ((time - this->lastRobotStatesUpdateTime_) >= secs)
+  {
+    // Send robot info update message, this only sends the
+    // main pose of the robot (which is all we need for now)
+    msgs::RobotStates msg;
+    gz::msgs::Set(msg.mutable_time(), _info.simTime);
+
+    for (const auto &model : this->world_->Models())
+    {
+      if (model->IsStatic())
+      {
+        // Ignore static models such as the ground and obstacles
+        continue;
+      }
+
+      auto stateMsg = msg.add_robot_state();
+      stateMsg->set_name(model->GetScopedName());
+      stateMsg->set_id(model->GetId());
+
+      auto poseMsg = stateMsg->mutable_pose();
+      auto relativePose = model->RelativePose();
+      gz::msgs::Set(poseMsg, relativePose);
+
+      stateMsg->set_battery_charge(this->battery_->current_charge);
+
+    }
+
+    if (msg.robot_state_size() > 0)
+    {
+      this->robotStatesPub_->Publish(msg);
+      this->lastRobotStatesUpdateTime_ = time;
+    }
+  }
+
 }
 
 /////////////////////////////////////////////////
