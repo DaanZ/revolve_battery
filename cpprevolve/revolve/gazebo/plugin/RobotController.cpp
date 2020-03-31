@@ -73,62 +73,75 @@ void RobotController::Load(
     ::gazebo::physics::ModelPtr _parent,
     sdf::ElementPtr _sdf)
 {
-  // Store the pointer to the model / world
-  this->model_ = _parent;
-  this->world_ = _parent->GetWorld();
-  this->initTime_ = this->world_->SimTime().Double();
 
-  // Create transport node
-  this->node_.reset(new gz::transport::Node());
-  this->node_->Init();
+    try {
+        // Store the pointer to the model / world
+        this->model_ = _parent;
+        this->world_ = _parent->GetWorld();
+        this->initTime_ = this->world_->SimTime().Double();
 
-  // Subscribe to insert request messages
-  this->requestSub_ = this->node_->Subscribe(
-      "~/request",
-      &RobotController::HandleRequest,
-      this);
+        // Create transport node
+        this->node_.reset(new gz::transport::Node());
+        this->node_->Init();
 
-  // Publisher for inserted models
-  this->responsePub_ = this->node_->Advertise< gz::msgs::Response >(
-      "~/response");
+        // Subscribe to robot battery state updater
+        this->batterySetSub_ = this->node_->Subscribe(
+                "~/battery_level/request",
+                &RobotController::UpdateBattery,
+                this);
+        this->batterySetPub_ = this->node_->Advertise<gz::msgs::Response>(
+                "~/battery_level/response");
 
-  if (not _sdf->HasElement("rv:robot_config"))
-  {
-    std::cerr
-        << "No `rv:robot_config` element found, controller not initialized."
-        << std::endl;
-    return;
-  }
+        this->requestSub_ = this->node_->Subscribe(
+                "~/request",
+                &RobotController::HandleRequest,
+                this);
 
-  auto robotConfiguration = _sdf->GetElement("rv:robot_config");
+        // Publisher for inserted models
+        this->responsePub_ = this->node_->Advertise< gz::msgs::Response >(
+                "~/response");
 
-  if (robotConfiguration->HasElement("rv:update_rate"))
-  {
-    auto updateRate = robotConfiguration->GetElement("rv:update_rate")->Get< double >();
-    this->actuationTime_ = 1.0 / updateRate;
-  }
+        if (not _sdf->HasElement("rv:robot_config")) {
+            std::cerr
+                    << "No `rv:robot_config` element found, controller not initialized."
+                    << std::endl;
+            return;
+        }
 
-  // Call the battery loader
-  this->LoadBattery(robotConfiguration);
+        auto robotConfiguration = _sdf->GetElement("rv:robot_config");
 
-  // Load motors
-  this->motorFactory_ = this->MotorFactory(_parent);
-  this->LoadActuators(robotConfiguration);
+        if (robotConfiguration->HasElement("rv:update_rate")) {
+            auto updateRate = robotConfiguration->GetElement("rv:update_rate")->Get<double>();
+            this->actuationTime_ = 1.0 / updateRate;
+        }
 
-  // Load sensors
-  this->sensorFactory_ = this->SensorFactory(_parent);
-  this->LoadSensors(robotConfiguration);
+        // Load motors
+        this->motorFactory_ = this->MotorFactory(_parent);
+        this->LoadActuators(robotConfiguration);
 
-  // Load brain, this needs to be done after the motors and sensors so they
-  // can potentially be reordered.
-  this->LoadBrain(robotConfiguration);
+        // Load sensors
+        this->sensorFactory_ = this->SensorFactory(_parent);
+        this->LoadSensors(robotConfiguration);
 
-  // Call startup function which decides on actuation
-  this->Startup(_parent, _sdf);
+        // Load brain, this needs to be done after the motors and sensors so they
+        // can potentially be reordered.
+        this->LoadBrain(robotConfiguration);
 
-    // Robot pose publisher
-  this->robotStatesPub_ = this->node_->Advertise< revolve::msgs::RobotStates >(
-      "~/revolve/robot_states", 50);
+        // Call the battery loader
+        this->LoadBattery(robotConfiguration);
+
+        this->robotStatesPub_ = this->node_->Advertise< revolve::msgs::RobotStates >(
+            "~/revolve/robot_states", 50);
+
+        // Call startup function which decides on actuation
+        this->Startup(_parent, _sdf);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error Loading the Robot Controller, expcetion: " << std::endl
+                  << e.what() << std::endl;
+        throw;
+    }
 }
 
 /////////////////////////////////////////////////
@@ -218,22 +231,32 @@ void RobotController::LoadBrain(const sdf::ElementPtr _sdf)
     return;
   }
 
-  auto brain = _sdf->GetElement("rv:brain");
-  auto controller = brain->GetElement("rv:controller")->GetAttribute("type")->GetAsString();
-  auto learner = brain->GetElement("rv:learner")->GetAttribute("type")->GetAsString();
-  std::cout << "Loading controller " << controller << " and learner " << learner << std::endl;
+  auto brain_sdf = _sdf->GetElement("rv:brain");
+  auto controller_type = brain_sdf->GetElement("rv:controller")->GetAttribute("type")->GetAsString();
+  auto learner = brain_sdf->GetElement("rv:learner")->GetAttribute("type")->GetAsString();
+  std::cout << "Loading controller " << controller_type << " and learner " << learner << std::endl;
 
-  if ("offline" == learner and "ann" == controller)
+  if ("offline" == learner and "ann" == controller_type)
   {
-    brain_.reset(new NeuralNetwork(this->model_, brain, motors_, sensors_));
+    brain_.reset(new NeuralNetwork(this->model_, brain_sdf, motors_, sensors_));
   }
-  else if ("rlpower" == learner and "spline" == controller)
+  else if ("rlpower" == learner and "spline" == controller_type)
   {
-    brain_.reset(new RLPower(this->model_, brain, motors_, sensors_));
+    if (not motors_.empty()) {
+        brain_.reset(new RLPower(this->model_, brain_sdf, motors_, sensors_));
+    }
   }
-  else if ("bo" == learner and "cpg" == controller)
+  else if ("bo" == learner and "cpg" == controller_type)
   {
     brain_.reset(new DifferentialCPG(this->model_, _sdf, motors_, sensors_, this->battery_));
+  }
+  else if ("offline" == learner and "cpg" == controller_type)
+  {
+      brain_.reset(new DifferentialCPGClean(brain_sdf, motors_));
+  }
+  else if ("offline" == learner and "cppn-cpg" == controller_type)
+  {
+      brain_.reset(new DifferentialCPPNCPG(brain_sdf, motors_));
   }
   else
   {
@@ -275,8 +298,11 @@ void RobotController::DoUpdate(const ::gazebo::common::UpdateInfo _info)
 
   auto currentTime = _info.simTime.Double() - initTime_;
 
-  this->brain_->Update(motors_, sensors_, currentTime, actuationTime_);
-  this->battery_->Update(currentTime, actuationTime_);
+  if (brain_)
+    brain_->Update(motors_, sensors_, currentTime, actuationTime_);
+
+  if (battery_)
+    battery_->Update(currentTime, actuationTime_);
 
   if (not this->robotStatesPubFreq_)
   {

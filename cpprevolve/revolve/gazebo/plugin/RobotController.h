@@ -30,8 +30,11 @@
 
 #include <revolve/gazebo/Types.h>
 #include <revolve/gazebo/battery/Battery.h>
-
 #include <revolve/msgs/robot_states.pb.h>
+
+#include "revolve/brains/controller/sensors/Sensor.h"
+#include "revolve/brains/controller/actuators/Actuator.h"
+
 
 namespace revolve
 {

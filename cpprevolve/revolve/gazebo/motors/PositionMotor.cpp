@@ -30,8 +30,9 @@ PositionMotor::PositionMotor(
     gz::physics::ModelPtr _model,
     const std::string &_partId,
     const std::string &_motorId,
-    const sdf::ElementPtr &_motor)
-    : JointMotor(std::move(_model), _partId, _motorId, _motor, 1)
+    const sdf::ElementPtr &_motor,
+    const std::string &_coordinates)
+    : JointMotor(std::move(_model), _partId, _motorId, _motor, 1, _coordinates)
     , positionTarget_(0)
     , noise_(0)
 {
@@ -76,7 +77,7 @@ PositionMotor::~PositionMotor() = default;
 // }
 
 /////////////////////////////////////////////////
-void PositionMotor::Update(
+void PositionMotor::write(
     const double *outputs,
     double /*step*/
     )
@@ -127,7 +128,6 @@ void PositionMotor::DoUpdate(const ::gazebo::common::Time &_simTime)
     // best correct the current position to something outside the range.
     position += (position > 0 ? -2 * M_PI : 2 * M_PI);
   }
-
 
   auto error = position - this->positionTarget_;
   auto cmd = this->pid_.Update(error, stepTime); // angular velocity TODO this is targeted velocity

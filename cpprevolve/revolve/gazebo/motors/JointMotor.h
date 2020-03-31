@@ -25,35 +25,42 @@
 
 #include <revolve/gazebo/motors/Motor.h>
 
-namespace revolve {
-namespace gazebo {
+namespace revolve
+{
+  namespace gazebo
+  {
+    class JointMotor
+            : public Motor
+    {
+      /// \brief Constructor
+      /// \brief[in] _model Model identifier
+      /// \brief[in] _partId Module identifier
+      /// \brief[in] _motorId Motor identifier
+      /// \brief[in] _outputs Number of motor outputs
+      /// \brief[in] _coordinates Coordinates ...
+      public:
+      JointMotor(
+          ::gazebo::physics::ModelPtr _model,
+          const std::string &_partId,
+          const std::string &_motorId,
+          sdf::ElementPtr _motor,
+          const unsigned int _outputs,
+          const std::string &_coordinates);
 
-class JointMotor : public Motor {
-    /// \brief Constructor
-    /// \brief[in] _model Model identifier
-    /// \brief[in] _partId Module identifier
-    /// \brief[in] _motorId Motor identifier
-    /// \brief[in] _outputs Number of motor outputs
-public:
-    JointMotor(
-            ::gazebo::physics::ModelPtr _model,
-            const std::string &_partId,
-            const std::string &_motorId,
-            sdf::ElementPtr _motor,
-            const unsigned int _outputs);
+      /// \brief Destructor
+      virtual ~JointMotor();
 
-    /// \brief Destructor
-public:
-    virtual ~JointMotor();
+      void write(const double *output, double step){throw std::logic_error("write() not implemented");}
 
-    /// \brief The joint this motor is controlling
-protected:
-    ::gazebo::physics::JointPtr joint_;
+      /// \brief The joint this motor is controlling
+      protected:
+      ::gazebo::physics::JointPtr joint_;
 
-    /// \brief  Scoped name of the controlled joint
-    std::string jointName_;
-};
-} /* namespace gazebo */
+      /// \brief  Scoped name of the controlled joint
+      std::string jointName_;
+
+    };
+  } /* namespace gazebo */
 } /* namespace revolve */
 
 #endif /* REVOLVE_GAZEBO_MOTORS_JOINTMOTOR_H_ */

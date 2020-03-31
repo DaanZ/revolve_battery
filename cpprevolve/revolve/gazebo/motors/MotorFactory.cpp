@@ -41,16 +41,18 @@ MotorPtr MotorFactory::Motor(
     sdf::ElementPtr _motorSdf,
     const std::string &_type,
     const std::string &_partId,
-    const std::string &_motorId)
+    const std::string &_motorId,
+    const std::string &_coordinates)
 {
+
   MotorPtr motor;
   if ("position" == _type)
   {
-    motor.reset(new PositionMotor(this->model_, _partId, _motorId, _motorSdf));
+    motor.reset(new PositionMotor(this->model_, _partId, _motorId, _motorSdf, _coordinates));
   }
   else if ("velocity" == _type)
   {
-    motor.reset(new VelocityMotor(this->model_, _partId, _motorId, _motorSdf));
+    motor.reset(new VelocityMotor(this->model_, _partId, _motorId, _motorSdf, _coordinates));
   }
 
   return motor;
@@ -59,6 +61,7 @@ MotorPtr MotorFactory::Motor(
 /////////////////////////////////////////////////
 MotorPtr MotorFactory::Create(sdf::ElementPtr _motorSdf, std::shared_ptr<::revolve::gazebo::Battery> battery)
 {
+  auto coordinates = _motorSdf->GetAttribute("coordinates");
   auto typeParam = _motorSdf->GetAttribute("type");
   auto partIdParam = _motorSdf->GetAttribute("part_id");
 //  auto partNameParam = _motorSdf->GetAttribute("part_name");
@@ -75,7 +78,8 @@ MotorPtr MotorFactory::Create(sdf::ElementPtr _motorSdf, std::shared_ptr<::revol
   auto partId = partIdParam->GetAsString();
   auto type = typeParam->GetAsString();
   auto id = idParam->GetAsString();
-  MotorPtr motor = this->Motor(_motorSdf, type, partId, id);
+  auto coord = coordinates->GetAsString();
+  MotorPtr motor = this->Motor(_motorSdf, type, partId, id, coord);
 
   if (not motor)
   {

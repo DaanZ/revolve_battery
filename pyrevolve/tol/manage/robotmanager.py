@@ -6,7 +6,6 @@ from pyrevolve.SDF.math import Vector3
 from pyrevolve.angle import RobotManager as RvRobotManager
 from pyrevolve.util import Time
 
-from pyrevolve.tol.manage import measures as ms
 from pyrevolve.evolution import fitness
 
 
@@ -21,27 +20,27 @@ class RobotManager(RvRobotManager):
             robot,
             position: Vector3,
             time: Time,
-            battery_level=0.0
+            battery_level: float = 0.0,
+            position_log_size=None,
+            warmup_time=0.0
     ):
         """
         :param config:
         :param robot: RevolveBot?
         :param position:
-        :type position: Vector3
-        :param time:
-        :type time: Time
+        :param time: time the robot was created
         :param battery_level: Battery charge for this robot
-        :type battery_level: float
         :return:
         """
-        speed_window = int(config.evaluation_time * config.pose_update_frequency)
+        speed_window = int(float(config.evaluation_time) * config.pose_update_frequency) if position_log_size is None \
+            else position_log_size
         super(RobotManager, self).__init__(
                 robot=robot,
                 position=position,
                 time=time,
                 battery_level=battery_level,
                 speed_window=speed_window,
-                warmup_time=config.warmup_time,
+                warmup_time=warmup_time
         )
 
         # Set of robots this bot has mated with
@@ -52,12 +51,15 @@ class RobotManager(RvRobotManager):
         self.battery_level = battery_level
         self.initial_charge = battery_level
 
+    def old_revolve_fitness(self):
+        return fitness.online_old_revolve(self)
+
     def is_evaluated(self):
         """
         Returns true if this robot is at least one full evaluation time old.
         :return:
         """
-        return self.age() >= (self.config.warmup_time + self.config.evaluation_time)
+        return self.age() >= (self.warmup_time + self.config.evaluation_time)
 
     def charge(self):
         """
@@ -66,23 +68,12 @@ class RobotManager(RvRobotManager):
         """
         return self.initial_charge - (float(self.age()) * self.size)
 
-    def distance_to(self, vec, planar=True):
+    def inverse_charge(self):
         """
-        Calculates the Euclidean distance from this robot to
-        the given vector position.
-        :param vec:
-        :type vec: Vector3
-        :param planar: If true, only x/y coordinates are considered.
+        Returns the remaining battery charge of this robot.
         :return:
         """
-        diff = self.last_position - vec
-        if planar:
-            diff.z = 0
-
-        return diff.norm()
-
-    def old_revolve_fitness(self):
-        return fitness.online_old_revolve(self)
+        return self.initial_charge - (float(self.age()) / self.size)
 
     def did_mate_with(self, other):
         """
@@ -138,6 +129,21 @@ class RobotManager(RvRobotManager):
 
         return True
 
+    def distance_to(self, vec, planar=True):
+        """
+        Calculates the Euclidean distance from this robot to
+        the given vector position.
+        :param vec:
+        :type vec: Vector3
+        :param planar: If true, only x/y coordinates are considered.
+        :return:
+        """
+        diff = self.last_position - vec
+        if planar:
+            diff.z = 0
+
+        return diff.norm()
+
     @staticmethod
     def header():
         """
@@ -150,3 +156,34 @@ class RobotManager(RvRobotManager):
             'extremity_count', 'joint_count', 'motor_count',
             'inputs', 'outputs', 'hidden', 'conn'
         ]
+
+# TODO remove
+# def write_robot(self, world, details_file, csv_writer):
+#     """
+#     :param world:
+#     :param details_file:
+#     :param csv_writer:
+#     :return:
+#     """
+#     with open(details_file, 'w') as f:
+#         f.write(self.robot.SerializeToString())
+#
+#     row = [getattr(world, 'current_run', 0), self.robot.id,
+#            world.age()]
+#     row += list(self.parent_ids) if self.parent_ids else ['', '']
+#     row += [self.size, self.last_position.x,
+#             self.last_position.y, self.last_position.z]
+#
+#     root = self.tree.root
+#     inputs, outputs, hidden = root.io_count(recursive=True)
+#     row += [
+#         count_extremities(root),
+#         count_joints(root),
+#         count_motors(root),
+#         inputs,
+#         outputs,
+#         hidden,
+#         count_connections(root)
+#     ]
+#
+#     csv_writer.writerow(row)

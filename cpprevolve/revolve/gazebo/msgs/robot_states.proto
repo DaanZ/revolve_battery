@@ -8,6 +8,7 @@ message RobotState {
   required string           name            = 2;
   required gazebo.msgs.Pose pose            = 3;
   required double           battery_charge  = 4;
+  optional bool             dead            = 5;
 }
 
 message RobotStates {

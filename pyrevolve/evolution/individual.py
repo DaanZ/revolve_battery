@@ -23,11 +23,34 @@ class Individual:
         if self.phenotype is None:
             self.phenotype = self.genotype.develop()
 
-    def __repr__(self):
+    @property
+    def id(self):
         _id = None
         if self.phenotype is not None:
             _id = self.phenotype.id
         elif self.genotype.id is not None:
             _id = self.genotype.id
-        return f'Individual_{_id}({self.fitness})'
+        return _id
 
+    def export_genotype(self, folder):
+        self.genotype.export_genotype(f'{folder}/genotypes/genotype_{self.phenotype.id}.txt')
+
+    def export_phenotype(self, folder):
+        if self.phenotype is not None:
+            self.phenotype.save_file(f'{folder}/phenotypes/{self.phenotype.id}.yaml', conf_type='yaml')
+
+    def export_fitness(self, folder):
+        """
+        It's saving the fitness into a file. The fitness can be a floating point number or None
+        :param folder: folder where to save the fitness
+        """
+        with open(f'{folder}/fitness_{self.id}.txt', 'w') as f:
+            f.write(str(self.fitness))
+
+    def export(self, folder):
+        self.export_genotype(folder)
+        self.export_phenotype(folder)
+        self.export_fitness(folder)
+
+    def __repr__(self):
+        return f'Individual_{self.id}({self.fitness})'

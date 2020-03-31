@@ -39,11 +39,9 @@ class World(WorldManager):
 
     def __init__(self, conf, _private, world_address):
         """
-
         :param conf:
-        :return:
         """
-        world_address = str_to_address(conf.world_address) if world_address is None else world_address
+        world_address = ("127.0.0.1", 11345) if world_address is None else world_address
 
         conf = make_revolve_config(conf)
         super(World, self).__init__(
@@ -121,6 +119,7 @@ class World(WorldManager):
             robot=robot,
             position=position,
             time=time,
+            battery_level=robot.battery_level,
         )
 
     async def add_highlight(self, position, color):
@@ -171,7 +170,7 @@ class World(WorldManager):
         """
         futures = []
         for tree, pose in zip(trees, poses):
-            future = await (self.insert_robot(tree, pose))
+            future = self.insert_robot(tree, pose)
             futures.append(future)
 
         future = multi_future(futures)
@@ -212,7 +211,7 @@ class World(WorldManager):
                 end=end,
                 thickness=constants.WALL_THICKNESS,
                 height=constants.WALL_HEIGHT)
-            future = await (self.insert_model(SDF(elements=[wall])))
+            future = self.insert_model(SDF(elements=[wall]))
             futures.append(future)
 
         return multi_future(futures)
