@@ -30,7 +30,7 @@ PositionMotor::PositionMotor(
     gz::physics::ModelPtr _model,
     const std::string &_partId,
     const std::string &_motorId,
-    const sdf::ElementPtr &_motor,
+    const sdf::ElementPtr _motor,
     const std::string &_coordinates)
     : JointMotor(std::move(_model), _partId, _motorId, _motor, 1, _coordinates)
     , positionTarget_(0)

@@ -334,7 +334,8 @@ void RobotController::DoUpdate(const ::gazebo::common::UpdateInfo _info)
       auto relativePose = model->RelativePose();
       gz::msgs::Set(poseMsg, relativePose);
 
-      stateMsg->set_battery_charge(this->battery_->current_charge);
+      if (battery_)
+        stateMsg->set_battery_charge(this->battery_->current_charge);
 
     }
 

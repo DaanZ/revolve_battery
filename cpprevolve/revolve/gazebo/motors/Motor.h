@@ -27,7 +27,6 @@
 
 #include <revolve/gazebo/Types.h>
 
-#include <revolve/gazebo/battery/Battery.h>
 #include <revolve/brains/controller/actuators/Actuator.h>
 
 namespace revolve
@@ -59,9 +58,7 @@ namespace revolve
       /// array of values, out of which the motor should read the first `n`
       /// values if it specifies `n` outputs.
       /// \param[in] step Actuation time in seconds
-      void write(
-          const double *_output,
-          double _step) = 0;
+      void write(const double *_output, double _step) = 0;
 
       /// \brief Retrieve the ID
       /// \return The part ID

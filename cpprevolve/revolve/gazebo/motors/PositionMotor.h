@@ -24,6 +24,8 @@
 
 #include <gazebo/common/common.hh>
 
+#include <revolve/gazebo/battery/Battery.h>
+
 #include <revolve/gazebo/motors/JointMotor.h>
 
 namespace revolve
@@ -40,7 +42,7 @@ namespace revolve
       /// \param Whether the motor is velocity driven (the alternative is
       /// position driven)
       /// \param The derivative gain of the motor's PID controller
-      public: PositionMotor(
+    public: PositionMotor(
           ::gazebo::physics::ModelPtr _model,
           const std::string &_partId,
           const std::string &_motorId,
@@ -48,10 +50,10 @@ namespace revolve
           const std::string &_coordinates);
 
       /// \brief Destructor
-      public: virtual ~PositionMotor() override;
+      virtual ~PositionMotor() override;
 
       /// \brief
-      public: virtual void write(
+      virtual void write(
           const double *_outputs,
           double _step) override;
 
@@ -59,33 +61,41 @@ namespace revolve
 //      protected: void OnUpdate(const ::gazebo::common::UpdateInfo info);
 
       /// \brief Perform the actual update given the step size
-      protected: void DoUpdate(const ::gazebo::common::Time &_simTime);
+    protected:
+      void DoUpdate(const ::gazebo::common::Time &_simTime);
 
       /// \brief Store update event pointer
-      protected: ::gazebo::event::ConnectionPtr updateConnection_;
+      ::gazebo::event::ConnectionPtr updateConnection_;
 
       /// \brief Last update time, used to determine update step time
-      protected: ::gazebo::common::Time prevUpdateTime_;
+      ::gazebo::common::Time prevUpdateTime_;
 
       /// \brief Current position target
-      protected: double positionTarget_;
+      double positionTarget_;
 
       /// \brief Upper and lower position limits
-      protected: double lowerLimit_;
+      double lowerLimit_;
 
       /// \brief
-      protected: double upperLimit_;
+      double upperLimit_;
 
       /// \brief Whether this joint can achieve a full range of motion,
       /// meaning it can flip from a positive to a negative angle. This is
       /// set to true whenever the total range is >/ 2 pi.
-      protected: bool fullRange_;
+      bool fullRange_;
 
       /// \brief Motor noise
-      protected: double noise_;
+      double noise_;
 
       /// \brief PID that controls this motor
-      protected: ::gazebo::common::PID pid_;
+      ::gazebo::common::PID pid_;
+
+      std::shared_ptr<::revolve::gazebo::Battery> battery_;
+
+      /// \brief The id of the consumer
+      uint32_t consumerId_;
+
+      friend class MotorFactory;
     };
   } /* namespace gazebo */
 } /* namespace revolve */

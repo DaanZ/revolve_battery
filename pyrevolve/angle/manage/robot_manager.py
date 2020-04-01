@@ -75,12 +75,12 @@ class RobotManager(object):
         :type poses_file: csv.writer
         :return:
         """
-        dead = state.dead if state.dead is not None else False
+        dead: bool = state.dead if state.dead is not None else False
         self.dead = dead or self.dead
 
         position = self._set_pose(state)
 
-        self.battery_level = state.battery_charge
+        self.battery_level: float = state.state.battery_charge if state.state.battery_charge is not None else 0.0
 
         age = world.age()
 

@@ -42,13 +42,20 @@ MotorPtr MotorFactory::Motor(
     const std::string &_type,
     const std::string &_partId,
     const std::string &_motorId,
-    const std::string &_coordinates)
+    const std::string &_coordinates,
+    std::shared_ptr<::revolve::gazebo::Battery> battery)
 {
 
   MotorPtr motor;
   if ("position" == _type)
   {
-    motor.reset(new PositionMotor(this->model_, _partId, _motorId, _motorSdf, _coordinates));
+    PositionMotor *position_motor = new PositionMotor(this->model_, _partId, _motorId, _motorSdf, _coordinates)
+
+    position_motor->battery_ = battery;
+    // adding consumer id to motor ptr from battery so each servo is a consumer of the battery
+    position_motor->consumerId_ = battery->AddConsumer();
+
+    motor.reset(position_motor);
   }
   else if ("velocity" == _type)
   {
@@ -79,7 +86,7 @@ MotorPtr MotorFactory::Create(sdf::ElementPtr _motorSdf, std::shared_ptr<::revol
   auto type = typeParam->GetAsString();
   auto id = idParam->GetAsString();
   auto coord = coordinates->GetAsString();
-  MotorPtr motor = this->Motor(_motorSdf, type, partId, id, coord);
+  MotorPtr motor = this->Motor(_motorSdf, type, partId, id, coord, battery);
 
   if (not motor)
   {
@@ -87,8 +94,5 @@ MotorPtr MotorFactory::Create(sdf::ElementPtr _motorSdf, std::shared_ptr<::revol
     throw std::runtime_error("Motor error");
   }
 
-// adding consumer id to motor ptr from battery so each servo is a consumer of the battery
-  motor->battery_ = battery;
-  motor->consumerId_ = battery->AddConsumer();
   return motor;
 }
