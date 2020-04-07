@@ -32,18 +32,20 @@
 #include <revolve/gazebo/battery/Battery.h>
 #include <revolve/msgs/robot_states.pb.h>
 
+#include <revolve/gazebo/util/TopicHelper.h>
+#include "revolve/gazebo/plugin/RobotLoader.h"
+
 #include "revolve/brains/controller/sensors/Sensor.h"
 #include "revolve/brains/controller/actuators/Actuator.h"
-
 
 namespace revolve
 {
   namespace gazebo
   {
     class RobotController
-            : public ::gazebo::ModelPlugin
+        : public ::gazebo::ModelPlugin
     {
-      public:
+    public:
       /// \brief Constructor
       RobotController();
 
@@ -51,43 +53,22 @@ namespace revolve
       virtual ~RobotController();
 
       /// \brief Load method
-      void Load(
-              ::gazebo::physics::ModelPtr _parent,
-              sdf::ElementPtr _sdf) override;
-
-      /// \return Factory class that creates motors for this model
-      virtual MotorFactoryPtr MotorFactory(
-          ::gazebo::physics::ModelPtr _model);
-
-      /// \return Factory class that creates motors for this robot
-      virtual SensorFactoryPtr SensorFactory(
-          ::gazebo::physics::ModelPtr _model);
+      virtual void Load(::gazebo::physics::ModelPtr _parent, sdf::ElementPtr _sdf) override;
 
       /// \brief Update event which, by default, is called periodically
       /// according to the update rate specified in the robot plugin.
       virtual void DoUpdate(const ::gazebo::common::UpdateInfo _info);
 
-      protected:
-      /// \brief Detects and loads motors in the plugin spec
-      virtual void LoadActuators(const sdf::ElementPtr _sdf);
+    protected:
 
-      /// \brief Detects and loads sensors in the plugin spec.
-      virtual void LoadSensors(const sdf::ElementPtr _sdf);
-
-      /// \brief Loads the brain from the `rv:brain` element.
-      /// \details By default this tries to construct a `StandardNeuralNetwork`.
-      virtual void LoadBrain(const sdf::ElementPtr _sdf);
-
-      /// \brief Loads / initializes the robot battery
-      virtual void LoadBattery(const sdf::ElementPtr _sdf);
+      // Method called
+      virtual void OnBeginUpdate(const ::gazebo::common::UpdateInfo &_info);
 
       /// \brief Method called at the end of the default `Load` function.
       /// \details This  should be used to initialize robot actuation, i.e.
       /// register some update event. By default, this grabs the
       /// `update_rate` from the robot config pointer, and binds
-      virtual void Startup(
-              ::gazebo::physics::ModelPtr _parent,
-              sdf::ElementPtr _sdf);
+      virtual void Startup(::gazebo::physics::ModelPtr _parent, sdf::ElementPtr _sdf);
 
       // Listener for analysis requests
       virtual void HandleRequest(ConstRequestPtr &request);
@@ -96,17 +77,10 @@ namespace revolve
       /// \brief actuation time has passed and updates if required.
       void CheckUpdate(const ::gazebo::common::UpdateInfo _info);
 
+      RobotLoader robotLoader;
+
       /// \brief Networking node
       ::gazebo::transport::NodePtr node_;
-
-      /// \brief Holds an instance of the motor factory
-      MotorFactoryPtr motorFactory_;
-
-      /// \brief Holds an instance of the sensor factory
-     SensorFactoryPtr sensorFactory_;
-
-      /// \brief Brain controlling this model
-      BrainPtr brain_;
 
       /// \brief Actuation time, in seconds
       double actuationTime_;
@@ -117,39 +91,48 @@ namespace revolve
       /// \brief Time of the last actuation, in seconds and nanoseconds
       ::gazebo::common::Time lastActuationTime_;
 
-      // Publisher for periodic robot poses
-      ::gazebo::transport::PublisherPtr robotStatesPub_;
-
       ::gazebo::transport::SubscriberPtr requestSub_;
 
       // Response publisher
       ::gazebo::transport::PublisherPtr responsePub_;
 
-      /// \brief Motors in this model
-      std::vector< MotorPtr > motors_;
+      // Pointer to the update event connection
+      ::gazebo::event::ConnectionPtr onBeginUpdateConnection;
 
-      /// \brief Sensors in this model
-      std::vector< SensorPtr > sensors_;
-
-      /// \brief Pointer to the model
-      ::gazebo::physics::ModelPtr model_;
+      // Death sentence list. It collects all the end time for all robots that have
+      // a death sentence
+      // NEGATIVE DEATH SENTENCES mean total lifetime, death sentence not yet initialized.
+      std::map<std::string, double> death_sentences_;
 
       /// \brief Pointer to the world
       ::gazebo::physics::WorldPtr world_;
+
+      // Publisher for periodic robot poses
+      ::gazebo::transport::PublisherPtr robotStatesPub_;
 
       // Frequency at which robot info is published
       // Defaults to 0, which means no update at all
       unsigned int robotStatesPubFreq_;
 
-      /// \brief Shared pointer to the battery
-      std::shared_ptr<::revolve::gazebo::Battery> battery_;
-
       // Last (simulation) time robot info was sent
       double lastRobotStatesUpdateTime_;
 
-      private:
+      // Mutex for the deleteMap_
+      boost::mutex death_sentences_mutex_;
+
+      // boost::mutex world_insert_remove_mutex;
+      ::gazebo::physics::Model_V models_to_remove;
+
+    private:
+      void ProcessDeath(revolve::msgs::RobotState *stateMsg, const ::gazebo::physics::ModelPtr model, const double time);
+
+      bool StatePublicationTime(const double time);
+
+      void SendState(const ::gazebo::common::UpdateInfo _info, const bool process_death);
+
       /// \brief Driver update event pointer
       ::gazebo::event::ConnectionPtr updateConnection_;
+
     };
   } /* namespace gazebo */
 } /* namespace revolve */

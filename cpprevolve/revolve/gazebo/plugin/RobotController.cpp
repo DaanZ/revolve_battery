@@ -16,16 +16,6 @@
 * Date: May 3, 2015
 *
 */
-
-#include  <stdexcept>
-
-#include <gazebo/sensors/sensors.hh>
-
-#include <revolve/gazebo/motors/MotorFactory.h>
-#include <revolve/gazebo/sensors/SensorFactory.h>
-#include <revolve/gazebo/brains/Brains.h>
-#include <revolve/gazebo/battery/Battery.h>
-
 #include "RobotController.h"
 
 namespace gz = gazebo;
@@ -40,109 +30,49 @@ RobotController::RobotController()
     , robotStatesPubFreq_(5)
     , lastRobotStatesUpdateTime_(0)
 {
-}
-
-// TODO duplicate code
-void unsubscribe(gz::transport::SubscriberPtr &subscription)
-{
-    if (subscription)
-        subscription->Unsubscribe();
-}
-
-// TODO duplicate code
-void fini(gz::transport::PublisherPtr &publisher)
-{
-    if (publisher)
-        publisher->Fini();
+  this->robotLoader = RobotLoader();
 }
 
 /////////////////////////////////////////////////
 RobotController::~RobotController()
 {
+  this->robotLoader.reset();
+
   this->node_.reset();
   this->world_.reset();
-  this->motorFactory_.reset();
-  this->sensorFactory_.reset();
+
   unsubscribe(this->requestSub_);
-  fini(this->robotStatesPub_);
-  fini(this->responsePub_);
+
+  cleanup(this->robotStatesPub_);
+  cleanup(this->responsePub_);
 }
 
 /////////////////////////////////////////////////
-void RobotController::Load(
-    ::gazebo::physics::ModelPtr _parent,
-    sdf::ElementPtr _sdf)
-{
+void RobotController::OnBeginUpdate(const ::gazebo::common::UpdateInfo &_info) {
 
-    try {
-        // Store the pointer to the model / world
-        this->model_ = _parent;
-        this->world_ = _parent->GetWorld();
-        this->initTime_ = this->world_->SimTime().Double();
+  if (not this->robotStatesPubFreq_)
+    return;
 
-        // Create transport node
-        this->node_.reset(new gz::transport::Node());
-        this->node_->Init();
+  auto time = _info.simTime.Double();
+  bool sendMessage = this->StatePublicationTime(time);
+  if (sendMessage) {
+    // Send robot info update message, this only sends the
+    // main pose of the robot (which is all we need for now)
+    msgs::RobotStates msg;
+    gz::msgs::Set(msg.mutable_time(), _info.simTime);
 
-        // Subscribe to robot battery state updater
-        this->batterySetSub_ = this->node_->Subscribe(
-                "~/battery_level/request",
-                &RobotController::UpdateBattery,
-                this);
-        this->batterySetPub_ = this->node_->Advertise<gz::msgs::Response>(
-                "~/battery_level/response");
+    this->SendState(_info, true);
+  }
 
-        this->requestSub_ = this->node_->Subscribe(
-                "~/request",
-                &RobotController::HandleRequest,
-                this);
+  for (const auto &model: this->models_to_remove) {
+    std::cout << "Removing " << model->GetScopedName() << std::endl;
+    gz::transport::requestNoReply(this->world_->Name(), "entity_delete", model->GetScopedName());
+    std::cout << "Removed " << model->GetScopedName() << std::endl;
+  }
+  this->models_to_remove.clear();
 
-        // Publisher for inserted models
-        this->responsePub_ = this->node_->Advertise< gz::msgs::Response >(
-                "~/response");
-
-        if (not _sdf->HasElement("rv:robot_config")) {
-            std::cerr
-                    << "No `rv:robot_config` element found, controller not initialized."
-                    << std::endl;
-            return;
-        }
-
-        auto robotConfiguration = _sdf->GetElement("rv:robot_config");
-
-        if (robotConfiguration->HasElement("rv:update_rate")) {
-            auto updateRate = robotConfiguration->GetElement("rv:update_rate")->Get<double>();
-            this->actuationTime_ = 1.0 / updateRate;
-        }
-
-        // Load motors
-        this->motorFactory_ = this->MotorFactory(_parent);
-        this->LoadActuators(robotConfiguration);
-
-        // Load sensors
-        this->sensorFactory_ = this->SensorFactory(_parent);
-        this->LoadSensors(robotConfiguration);
-
-        // Load brain, this needs to be done after the motors and sensors so they
-        // can potentially be reordered.
-        this->LoadBrain(robotConfiguration);
-
-        // Call the battery loader
-        this->LoadBattery(robotConfiguration);
-
-        this->robotStatesPub_ = this->node_->Advertise< revolve::msgs::RobotStates >(
-            "~/revolve/robot_states", 50);
-
-        // Call startup function which decides on actuation
-        this->Startup(_parent, _sdf);
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error Loading the Robot Controller, expcetion: " << std::endl
-                  << e.what() << std::endl;
-        throw;
-    }
 }
+
 
 /////////////////////////////////////////////////
 // Process insert and delete requests
@@ -153,125 +83,37 @@ void RobotController::HandleRequest(ConstRequestPtr &request)
     auto frequency = request->data();
     assert(frequency.find_first_not_of( "0123456789" ) == std::string::npos);
     this->robotStatesPubFreq_ = (unsigned int)std::stoul(frequency);
-    std::cout << "Setting robot state update frequency to "
-              << this->robotStatesPubFreq_ << "." << std::endl;
+    std::cout << "Setting robot state update frequency to " << this->robotStatesPubFreq_ << "." << std::endl;
 
-    gz::msgs::Response resp;
-    resp.set_id(request->id());
-    resp.set_request("set_robot_state_update_frequency");
-    resp.set_response("success");
-
-    this->responsePub_->Publish(resp);
+    respond(request->id(), request->request(), "success");
   }
-}
-/////////////////////////////////////////////////
-void RobotController::LoadActuators(const sdf::ElementPtr _sdf)
-{
-  if (not _sdf->HasElement("rv:brain")
-      or not _sdf->GetElement("rv:brain")->HasElement("rv:actuators"))
+  else if (request->request() == "insert_sdf") // TODO also in worldcontroller.
   {
-    return;
-  }
-  auto actuators = _sdf->GetElement("rv:brain")->GetElement("rv:actuators");
+    sdf::SDF robotSDF;
+    robotSDF.SetFromString(request->data());
 
-  // Load actuators of type servomotor
-  if (actuators->HasElement("rv:servomotor"))
-  {
-    auto servomotor = actuators->GetElement("rv:servomotor");
-    while (servomotor)
+    // Get the model name, store in the expected map
+    auto name = robotSDF.Root()->GetElement("model")->GetAttribute("name")->GetAsString();
+    double lifespan_timeout = request->dbl_data();
+
+    if (lifespan_timeout > 0)
     {
-      auto servomotorObj = this->motorFactory_->Create(servomotor, this->battery_);
-      motors_.push_back(servomotorObj);
-      servomotor = servomotor->GetNextElement("rv:servomotor");
+      boost::mutex::scoped_lock lock(this->death_sentences_mutex_);
+      // Initializes the death sentence negative because I don't dare to take the
+      // simulation time from this thread.
+      death_sentences_[name] = -lifespan_timeout;
     }
-  }
-}
 
-/////////////////////////////////////////////////
-void RobotController::LoadSensors(const sdf::ElementPtr _sdf)
-{
-  if (not _sdf->HasElement("rv:brain")
-      or not _sdf->GetElement("rv:brain")->HasElement("rv:sensors"))
-  {
-    return;
-  }
-  auto sensors = _sdf->GetElement("rv:brain")->GetElement("rv:sensors");
-
-  // Load sensors
-  auto sensor = sensors->GetElement("rv:sensor");
-  while (sensor)
-  {
-    auto sensorObj = this->sensorFactory_->Create(sensor);
-    sensors_.push_back(sensorObj);
-    sensor = sensor->GetNextElement("rv:sensor");
-  }
-}
-
-/////////////////////////////////////////////////
-MotorFactoryPtr RobotController::MotorFactory(
-    ::gazebo::physics::ModelPtr _model)
-{
-  return MotorFactoryPtr(new class MotorFactory(_model));
-}
-
-/////////////////////////////////////////////////
-SensorFactoryPtr RobotController::SensorFactory(
-    ::gazebo::physics::ModelPtr _model)
-{
-  return SensorFactoryPtr(new class SensorFactory(_model));
-}
-
-/////////////////////////////////////////////////
-void RobotController::LoadBrain(const sdf::ElementPtr _sdf)
-{
-  if (not _sdf->HasElement("rv:brain"))
-  {
-    std::cerr << "No robot brain detected, this is probably an error."
-              << std::endl;
-    return;
-  }
-
-  auto brain_sdf = _sdf->GetElement("rv:brain");
-  auto controller_type = brain_sdf->GetElement("rv:controller")->GetAttribute("type")->GetAsString();
-  auto learner = brain_sdf->GetElement("rv:learner")->GetAttribute("type")->GetAsString();
-  std::cout << "Loading controller " << controller_type << " and learner " << learner << std::endl;
-
-  if ("offline" == learner and "ann" == controller_type)
-  {
-    brain_.reset(new NeuralNetwork(this->model_, brain_sdf, motors_, sensors_));
-  }
-  else if ("rlpower" == learner and "spline" == controller_type)
-  {
-    if (not motors_.empty()) {
-        brain_.reset(new RLPower(this->model_, brain_sdf, motors_, sensors_));
-    }
-  }
-  else if ("bo" == learner and "cpg" == controller_type)
-  {
-    brain_.reset(new DifferentialCPG(this->model_, _sdf, motors_, sensors_, this->battery_));
-  }
-  else if ("offline" == learner and "cpg" == controller_type)
-  {
-      brain_.reset(new DifferentialCPGClean(brain_sdf, motors_));
-  }
-  else if ("offline" == learner and "cppn-cpg" == controller_type)
-  {
-      brain_.reset(new DifferentialCPPNCPG(brain_sdf, motors_));
-  }
-  else
-  {
-    throw std::runtime_error("Robot brain is not defined.");
+    robotSDF.Root()->Reset();
   }
 }
 
 /////////////////////////////////////////////////
 /// Default startup, bind to CheckUpdate
-void RobotController::Startup(
-    ::gazebo::physics::ModelPtr /*_parent*/,
-    sdf::ElementPtr /*_sdf*/)
+void RobotController::Startup(::gazebo::physics::ModelPtr, sdf::ElementPtr)
 {
   this->updateConnection_ = gz::event::Events::ConnectWorldUpdateBegin(
-      boost::bind(&RobotController::CheckUpdate, this, _1));
+    boost::bind(&RobotController::CheckUpdate, this, _1));
 }
 
 /////////////////////////////////////////////////
@@ -286,87 +128,134 @@ void RobotController::CheckUpdate(const ::gazebo::common::UpdateInfo _info)
   }
 }
 
+bool RobotController::StatePublicationTime(const double time)
+{
+  auto seconds = 1.0 / this->robotStatesPubFreq_;
+  return (time - this->lastRobotStatesUpdateTime_) >= seconds;
+}
+
+/////////////////////////////////////////////////
+void RobotController::Load(::gazebo::physics::ModelPtr _parent, sdf::ElementPtr _sdf)
+{
+  try
+  {
+    // Store the pointer to the model / world
+    this->world_ = _parent->GetWorld();
+    this->initTime_ = this->world_->SimTime().Double();
+
+        // Create transport node
+    this->node_.reset(new gz::transport::Node());
+    this->node_->Init();
+
+    this->requestSub_ = this->node_->Subscribe("~/request", &RobotController::HandleRequest, this);
+
+    // Publisher for inserted models
+    this->responsePub_ = this->node_->Advertise< gz::msgs::Response >("~/response");
+
+    // Robot pose publisher
+    this->robotStatesPub_ = this->node_->Advertise< revolve::msgs::RobotStates >("~/revolve/robot_states", 500);
+
+    auto robotConfiguration = _sdf->GetElement("rv:robot_config");
+    if (robotConfiguration->HasElement("rv:update_rate")) {
+      auto updateRate = robotConfiguration->GetElement("rv:update_rate")->Get<double>();
+      this->actuationTime_ = 1.0 / updateRate;
+    }
+
+    this->robotLoader.Load(_parent, robotConfiguration);
+
+  }
+  catch (const std::exception &e)
+  {
+    std::cerr << "Error Loading the Robot Loader, expectation: " << std::endl << e.what() << std::endl;
+    throw;
+  }
+}
+
 /////////////////////////////////////////////////
 /// Default update function simply tells the brain to perform an update
 void RobotController::DoUpdate(const ::gazebo::common::UpdateInfo _info)
 {
-    ///TODO fix this when you have the right amount of initial charge for robots
-//    if (battery_->current_charge < 0)
-//    {
-//        std::exit(0);
-//    }
+  ///TODO fix this when you have the right amount of initial charge for robots
+  // if (battery_->current_charge < 0) { std::exit(0); }
 
-  auto currentTime = _info.simTime.Double() - initTime_;
+  auto time = _info.simTime.Double();
 
-  if (brain_)
-    brain_->Update(motors_, sensors_, currentTime, actuationTime_);
-
-  if (battery_)
-    battery_->Update(currentTime, actuationTime_);
+  this->robotLoader.DoUpdate();
 
   if (not this->robotStatesPubFreq_)
-  {
     return;
-  }
 
-  auto secs = 1.0 / this->robotStatesPubFreq_;
-  auto time = _info.simTime.Double();
-  if ((time - this->lastRobotStatesUpdateTime_) >= secs)
-  {
-    // Send robot info update message, this only sends the
-    // main pose of the robot (which is all we need for now)
-    msgs::RobotStates msg;
-    gz::msgs::Set(msg.mutable_time(), _info.simTime);
-
-    for (const auto &model : this->world_->Models())
-    {
-      if (model->IsStatic())
-      {
-        // Ignore static models such as the ground and obstacles
-        continue;
-      }
-
-      auto stateMsg = msg.add_robot_state();
-      stateMsg->set_name(model->GetScopedName());
-      stateMsg->set_id(model->GetId());
-
-      auto poseMsg = stateMsg->mutable_pose();
-      auto relativePose = model->RelativePose();
-      gz::msgs::Set(poseMsg, relativePose);
-
-      if (battery_)
-        stateMsg->set_battery_charge(this->battery_->current_charge);
-
-    }
-
-    if (msg.robot_state_size() > 0)
-    {
-      this->robotStatesPub_->Publish(msg);
-      this->lastRobotStatesUpdateTime_ = time;
-    }
-  }
-
+  bool send_message = this->StatePublicationTime(time);
+  if (send_message)
+    this->SendState(_info, false);
 }
 
-/////////////////////////////////////////////////
-void RobotController::LoadBattery(const sdf::ElementPtr _sdf)
+void RobotController::ProcessDeath(revolve::msgs::RobotState *stateMsg, const ::gazebo::physics::ModelPtr model, const double time)
 {
-  if (_sdf->HasElement("rv:battery"))
-  {
-    sdf::ElementPtr batteryElem = _sdf->GetElement("rv:battery");
-    double battery_initial_charge;
-    try {
-        battery_initial_charge = std::stod(
-                batteryElem->GetAttribute("initial_charge")->GetAsString()
-        );
-    } catch(std::invalid_argument &e) {
-        std::clog << "Initial charge of the robot not set, using 0.0" << std::endl;
-        battery_initial_charge = 0.0;
-    }
-    this->battery_.reset(new ::revolve::gazebo::Battery(battery_initial_charge)); // set initial battery (joules)
-    this->battery_->UpdateParameters(batteryElem);
-    this->battery_->ResetVoltage();
-    this->battery_->robot_name = this->model_->GetName();
+  // Death sentence check
+  const std::string name = model->GetName();
+  bool death_sentence = false;
 
+  double death_sentence_value = 0;
+  {
+    boost::mutex::scoped_lock lock_death(death_sentences_mutex_);
+    death_sentence = death_sentences_.count(name) > 0;
+
+    if (death_sentence)
+      death_sentence_value = death_sentences_[name];
+    else
+      return; // Does this fare with the scoped_lock?
+  }
+
+
+  if (death_sentence_value < 0) {
+    // Initialize death sentence
+    death_sentences_[name] = time - death_sentence_value;
+    stateMsg->set_dead(false);
+  } else {
+    bool alive = death_sentence_value > time;
+    stateMsg->set_dead(not alive);
+
+    if (not alive) {
+      boost::mutex::scoped_lock lock(this->death_sentences_mutex_);
+      this->death_sentences_.erase(model->GetName());
+
+      this->models_to_remove.emplace_back(model);
+    }
+  }
+}
+
+void RobotController::SendState(const ::gazebo::common::UpdateInfo _info, const bool process_death)
+{
+  // Send robot info update message, this only sends the main pose of the robot (which is all we need for now)
+  msgs::RobotStates msg;
+  gz::msgs::Set(msg.mutable_time(), _info.simTime);
+  auto time = _info.simTime.Double();
+
+  boost::recursive_mutex::scoped_lock lock_physics(*this->world_->Physics()->GetPhysicsUpdateMutex());
+  for (const auto &model : this->world_->Models())
+  {
+    if (model->IsStatic())
+      continue; // Ignore static models such as the ground and obstacles
+
+    revolve::msgs::RobotState *stateMsg = msg.add_robot_state();
+    stateMsg->set_name(model->GetScopedName());
+    stateMsg->set_id(model->GetId());
+
+    auto poseMsg = stateMsg->mutable_pose();
+    auto relativePose = model->RelativePose();
+    gz::msgs::Set(poseMsg, relativePose);
+
+    if (process_death)
+      this->ProcessDeath(stateMsg, model, time);
+
+    if (this->robotLoader.battery_)
+      stateMsg->set_battery_charge(this->robotLoader.battery_->current_charge);
+  }
+
+  if (msg.robot_state_size() > 0)
+  {
+    this->robotStatesPub_->Publish(msg);
+    this->lastRobotStatesUpdateTime_ = time;
   }
 }

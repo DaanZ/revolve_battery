@@ -61,8 +61,12 @@ namespace revolve
       public: virtual SensorPtr Create(sdf::ElementPtr _sensorSdf);
 
       /// \brief Robot model for which this factory is generating sensors.
-      protected: ::gazebo::physics::ModelPtr model_;
+    protected:
+      ::gazebo::physics::ModelPtr model_;
     };
+
+    /// \return Factory class that creates motors for this robot
+    SensorFactoryPtr GetSensorFactory(::gazebo::physics::ModelPtr _model);
   } /* namespace gazebo */
 } /* namespace revolve */
 

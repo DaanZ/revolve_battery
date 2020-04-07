@@ -61,6 +61,8 @@ namespace revolve
       /// \brief Internal reference to the robot model
       protected: ::gazebo::physics::ModelPtr model_;
     };
+
+    MotorFactoryPtr GetMotorFactory(::gazebo::physics::ModelPtr _model);
   } /* namespace gazebo */
 } /* namespace revolve */
 

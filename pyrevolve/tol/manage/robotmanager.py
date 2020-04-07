@@ -6,7 +6,7 @@ from pyrevolve.SDF.math import Vector3
 from pyrevolve.angle import RobotManager as RvRobotManager
 from pyrevolve.util import Time
 
-from pyrevolve.evolution import fitness
+from pyrevolve.evolution.fitness import online_old_revolve
 
 
 class RobotManager(RvRobotManager):
@@ -52,7 +52,7 @@ class RobotManager(RvRobotManager):
         self.initial_charge = battery_level
 
     def old_revolve_fitness(self):
-        return fitness.online_old_revolve(self)
+        return online_old_revolve(self)
 
     def is_evaluated(self):
         """

@@ -90,3 +90,8 @@ SensorPtr SensorFactory::Create(sdf::ElementPtr _sensorSdf)
 
   return sensor;
 }
+
+SensorFactoryPtr GetSensorFactory(::gazebo::physics::ModelPtr _model)
+{
+  return SensorFactoryPtr(new class SensorFactory(_model));
+}

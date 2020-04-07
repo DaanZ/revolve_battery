@@ -35,101 +35,73 @@
 #include <gazebo/common/common.hh>
 #include <gazebo/msgs/msgs.hh>
 
+#include <revolve/gazebo/util/TopicHelper.h>
+
 #include <revolve/msgs/model_inserted.pb.h>
 
 namespace revolve {
-namespace gazebo {
+  namespace gazebo {
 
-class WorldController: public ::gazebo::WorldPlugin
-{
-public:
-    WorldController();
+    class WorldController: public ::gazebo::WorldPlugin
+    {
+    public:
+      WorldController();
 
-    virtual ~WorldController();
+      virtual ~WorldController();
 
-    virtual void Load(
-            ::gazebo::physics::WorldPtr _parent,
-            sdf::ElementPtr _sdf) override;
+      virtual void Load(::gazebo::physics::WorldPtr _parent, sdf::ElementPtr _sdf) override;
 
-    virtual void Reset() override;
+      virtual void Reset() override;
 
-protected:
-    // Listener for analysis requests
-    virtual void HandleRequest(ConstRequestPtr &request);
+    protected:
+      // Listener for analysis requests
+      virtual void HandleRequest(ConstRequestPtr &request);
 
-    // Listener for entity delete responses
-    virtual void HandleResponse(ConstResponsePtr &request);
+      // Listener for entity delete responses
+      virtual void HandleResponse(ConstResponsePtr &request);
 
-    // Callback for model insertion
-    virtual void OnModel(ConstModelPtr &msg);
+      // Callback for model insertion
+      virtual void OnModel(ConstModelPtr &msg);
 
-    // Method called
-    virtual void OnBeginUpdate(const ::gazebo::common::UpdateInfo &_info);
+      virtual void OnEndUpdate();
 
-    virtual void OnEndUpdate();
+      // Maps model names to insert request IDs
+      // model_name -> request_id, SDF, insert_operation_pending
+      std::map<std::string, std::tuple<int, std::string, bool> > insertMap_;
 
-    // Maps model names to insert request IDs
-    // model_name -> request_id, SDF, insert_operation_pending
-    std::map<std::string, std::tuple<int, std::string, bool> > insertMap_;
+      // Queue of `delete_robot` requests
+      std::queue<std::tuple<::gazebo::physics::ModelPtr, int>> delete_robot_queue;
 
-    // Queue of `delete_robot` requests
-    std::queue<std::tuple<::gazebo::physics::ModelPtr, int>> delete_robot_queue;
+      // Stores the world
+      ::gazebo::physics::WorldPtr world_;
 
-    // Stores the world
-    ::gazebo::physics::WorldPtr world_;
+      // Transport node
+      ::gazebo::transport::NodePtr node_;
 
-    // Transport node
-    ::gazebo::transport::NodePtr node_;
+      // Pointer to the update event connection
+      ::gazebo::event::ConnectionPtr onEndUpdateConnection;
 
-    // Mutex for the insertMap_
-    boost::mutex insertMutex_;
+      // Mutexes
+      boost::mutex insertMutex_;
+      boost::mutex deleteMutex_;
 
-    // Mutex for the deleteMap_
-    boost::mutex deleteMutex_;
+      // Handle requests
+      ::gazebo::transport::SubscriberPtr requestSub_;
+      ::gazebo::transport::PublisherPtr requestPub_;
 
-    // Request subscriber
-    ::gazebo::transport::SubscriberPtr requestSub_;
+      // Handle Response
+      ::gazebo::transport::SubscriberPtr responseSub_;
+      ::gazebo::transport::PublisherPtr responsePub_;
 
-    // Request publisher
-    ::gazebo::transport::PublisherPtr requestPub_;
+      // Subscriber for actual model insertion
+      ::gazebo::transport::SubscriberPtr modelSub_;
+    private:
+      // Functions for OnEndUpdate
+      void DeleteRobot();
+      void InsertRobot();
 
-    // Response subscriber
-    ::gazebo::transport::SubscriberPtr responseSub_;
-
-    // Response publisher
-    ::gazebo::transport::PublisherPtr responsePub_;
-
-    // Subscriber for actual model insertion
-    ::gazebo::transport::SubscriberPtr modelSub_;
-
-    // Publisher for periodic robot poses
-    ::gazebo::transport::PublisherPtr robotStatesPub_;
-
-    // Frequency at which robot info is published
-    // Defaults to 0, which means no update at all
-    unsigned int robotStatesPubFreq_;
-
-    // Pointer to the update event connection
-    ::gazebo::event::ConnectionPtr onBeginUpdateConnection;
-    ::gazebo::event::ConnectionPtr onEndUpdateConnection;
-
-    // Last (simulation) time robot info was sent
-    double lastRobotStatesUpdateTime_;
-
-    // Death sentence list. It collects all the end time for all robots that have
-    // a death sentence
-    // NEGATIVE DEATH SENTENCES mean total lifetime, death sentence not yet initialized.
-    std::map<std::string, double> death_sentences_;
-
-    // Pointer to the update event connection
-    ::gazebo::event::ConnectionPtr updateConnection_;
-
-    // Mutex for the deleteMap_
-    boost::mutex death_sentences_mutex_;
-
-    // boost::mutex world_insert_remove_mutex;
-    ::gazebo::physics::Model_V models_to_remove;
-
+      // Response to a request
+      void Respond(int const &id, std::string const &topic, std::string const &message);
     };
   }  // namespace gazebo
 }  // namespace revolve

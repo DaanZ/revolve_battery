@@ -23,6 +23,7 @@
 #include <revolve/gazebo/motors/Motors.h>
 
 #include <revolve/gazebo/battery/Battery.h>
+
 namespace gz = gazebo;
 
 using namespace revolve::gazebo;
@@ -49,7 +50,7 @@ MotorPtr MotorFactory::Motor(
   MotorPtr motor;
   if ("position" == _type)
   {
-    PositionMotor *position_motor = new PositionMotor(this->model_, _partId, _motorId, _motorSdf, _coordinates)
+    PositionMotor *position_motor = new PositionMotor(this->model_, _partId, _motorId, _motorSdf, _coordinates);
 
     position_motor->battery_ = battery;
     // adding consumer id to motor ptr from battery so each servo is a consumer of the battery
@@ -71,7 +72,7 @@ MotorPtr MotorFactory::Create(sdf::ElementPtr _motorSdf, std::shared_ptr<::revol
   auto coordinates = _motorSdf->GetAttribute("coordinates");
   auto typeParam = _motorSdf->GetAttribute("type");
   auto partIdParam = _motorSdf->GetAttribute("part_id");
-//  auto partNameParam = _motorSdf->GetAttribute("part_name");
+  // auto partNameParam = _motorSdf->GetAttribute("part_name");
   auto idParam = _motorSdf->GetAttribute("id");
 
   if (not typeParam or not partIdParam or not idParam)
@@ -81,7 +82,7 @@ MotorPtr MotorFactory::Create(sdf::ElementPtr _motorSdf, std::shared_ptr<::revol
     throw std::runtime_error("Motor error");
   }
 
-//  auto partName = partNameParam->GetAsString();
+  // auto partName = partNameParam->GetAsString();
   auto partId = partIdParam->GetAsString();
   auto type = typeParam->GetAsString();
   auto id = idParam->GetAsString();
@@ -95,4 +96,9 @@ MotorPtr MotorFactory::Create(sdf::ElementPtr _motorSdf, std::shared_ptr<::revol
   }
 
   return motor;
+}
+
+MotorFactoryPtr GetMotorFactory(::gazebo::physics::ModelPtr _model)
+{
+  return MotorFactoryPtr(new class MotorFactory(_model));
 }

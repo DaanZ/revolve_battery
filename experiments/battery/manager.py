@@ -8,8 +8,6 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 newpath = os.path.join(current_dir, '..', '..')
 sys.path.append(newpath)
 
-from pygazebo.pygazebo import DisconnectError
-
 from pyrevolve import revolve_bot
 from pyrevolve import parser
 from pyrevolve.SDF.math import Vector3
@@ -33,7 +31,6 @@ async def run():
         robot.load_file(settings.robot_yaml)
     robot.update_substrate()
 
-
     # Start Simulator
     if settings.simulator_cmd != 'debug':
         simulator_supervisor = DynamicSimSupervisor(
@@ -45,8 +42,6 @@ async def run():
             simulator_name='gazebo'
         )
         await simulator_supervisor.launch_simulator(port=settings.port_start)
-
-
 
     # Connect to the simulator and pause
     world = await World.create(settings, world_address=('localhost', settings.port_start))

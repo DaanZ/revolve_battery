@@ -1,15 +1,16 @@
 import random as py_random
 from pyrevolve.tol.manage import measures
 
-from pyrevolve.angle import RobotManager as RvRobotManager
-from pyrevolve.tol.manage.robotmanager import RobotManager
+# Circular Dependency
+#from pyrevolve.angle import RobotManager as RvRobotManager
+#from pyrevolve.tol.manage.robotmanager import RobotManager
 
 
-def stupid(robot_manager: RvRobotManager, robot):
+def stupid(robot_manager, robot):
     return 1.0
 
 
-def random(robot_manager: RvRobotManager, robot):
+def random(robot_manager, robot):
     return py_random.random()
 
 
@@ -19,15 +20,15 @@ def displacement(robot_manager, robot):
     return displacement_vec.magnitude()
 
 
-def displacement_velocity(robot_manager: RvRobotManager, robot):
+def displacement_velocity(robot_manager, robot):
     return measures.displacement_velocity(robot_manager)
 
 
-def battery(robot_manager: RvRobotManager, robot):
+def battery(robot_manager, robot):
     return robot_manager.battery_level
 
 
-def online_old_revolve(robot_manager: RobotManager):
+def online_old_revolve(robot_manager):
     """
     Fitness is proportional to both the displacement and absolute
     velocity of the center of mass of the robot, in the formula:
@@ -65,7 +66,7 @@ def online_old_revolve(robot_manager: RobotManager):
     return v if v <= fitness_limit else 0.0
 
 
-def displacement_velocity_hill(robot_manager: RvRobotManager, robot):
+def displacement_velocity_hill(robot_manager, robot):
     _displacement_velocity_hill = measures.displacement_velocity_hill(robot_manager)
     if _displacement_velocity_hill < 0:
         _displacement_velocity_hill /= 10
@@ -78,7 +79,7 @@ def displacement_velocity_hill(robot_manager: RvRobotManager, robot):
     return _displacement_velocity_hill
 
 
-def floor_is_lava(robot_manager: RvRobotManager, robot):
+def floor_is_lava(robot_manager, robot):
     _displacement_velocity_hill = measures.displacement_velocity_hill(robot_manager)
     _contacts = measures.contacts(robot_manager, robot)
 
